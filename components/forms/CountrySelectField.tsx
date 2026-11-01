@@ -21,9 +21,9 @@ import { Check, ChevronsUpDown } from "lucide-react"
 import countryList from "react-select-country-list"
 
 type CountrySelectProps = {
-    name: string;
+    name: "country";
     label: string;
-    control: Control<any>;
+    control: Control<SignUpFormData>;
     error?: FieldError;
     required?: boolean;
 }
