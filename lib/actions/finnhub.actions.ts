@@ -20,9 +20,11 @@ import {
 import { POPULAR_STOCK_SYMBOLS } from '@/lib/constants';
 
 // Import cache từ React.
-// cache() giúp ghi nhớ kết quả của hàm theo tham số
-// trong phạm vi một server render/request phù hợp.
-// Nó KHÔNG phải cache lâu dài 30 phút hay 1 giờ.
+// cache() có thể ghi nhớ kết quả theo tham số trong một lần render
+// Server Component. React không bảo đảm memoization này khi gọi hàm
+// ngoài cây component, ví dụ từ một tác vụ nền.
+// Nó KHÔNG phải cache dữ liệu Finnhub lâu dài 30 phút hay 1 giờ;
+// thời hạn đó do tùy chọn next.revalidate của fetch() bên dưới đặt ra.
 import { cache } from 'react';
 
 // URL gốc của Finnhub API.
@@ -123,8 +125,9 @@ export { fetchJSON };
  * Hàm getNews
  *
  * Chức năng:
- * - Nếu có symbols: lấy tin tức theo từng mã cổ phiếu.
- * - Nếu không có symbols: lấy tin tức thị trường chung.
+ * - Nếu có symbols: ưu tiên lấy tin tức theo từng mã cổ phiếu.
+ * - Nếu không có symbols hoặc không lấy được bài nào theo mã:
+ *   lấy tin tức thị trường chung.
  * - Kiểm tra dữ liệu hợp lệ.
  * - Giới hạn tối đa 6 bài báo.
  *
@@ -139,11 +142,11 @@ export async function getNews(
     try {
 
         // Lấy khoảng thời gian 5 ngày.
-        // Ví dụ: từ 2026-10-24 đến 2026-10-29.
-        // Giá trị thực tế phụ thuộc vào getDateRange().
+        // Ngày bắt đầu và kết thúc được tính tại thời điểm gọi hàm.
         const range = getDateRange(5);
 
-        // Lấy Finnhub API key từ biến môi trường.
+        // Hàm getNews chỉ đọc NEXT_PUBLIC_FINNHUB_API_KEY.
+        // Khác với searchStocks, nó không đọc FINNHUB_API_KEY.
         const token = process.env.NEXT_PUBLIC_FINNHUB_API_KEY;
 
         // Nếu không cấu hình API key thì ném lỗi.
@@ -227,7 +230,7 @@ export async function getNews(
                         // <RawNewsArticle[]>:
                         // Khai báo kiểu dữ liệu mong đợi.
                         //
-                        // 300 giây = 5 phút cache.
+                        // 300 giây = thời hạn cache của fetch() là 5 phút.
                         const articles =
                             await fetchJSON<RawNewsArticle[]>(url, 300);
 
@@ -268,10 +271,12 @@ export async function getNews(
             // AAPL có [A1, A2, A3]
             // TSLA có [T1, T2, T3]
             //
-            // Kết quả:
+            // Thứ tự thu thập tạm thời:
             // A1, T1, A2, T2, A3, T3
             //
-            // Cách này giúp tin tức đa dạng giữa các mã.
+            // Cách này giúp chọn tin từ nhiều mã. Trước khi trả về,
+            // danh sách còn được sắp xếp theo thời gian nên thứ tự cuối
+            // không nhất thiết xen kẽ giữa các mã.
 
             // Vòng lặp ngoài: tối đa 6 lượt.
             for (let round = 0; round < maxArticles; round++) {
@@ -350,7 +355,7 @@ export async function getNews(
             `${FINNHUB_BASE_URL}/news` +
             `?category=general&token=${token}`;
 
-        // Gọi API và cache trong 300 giây.
+        // Gọi API với thời hạn cache của fetch() là 300 giây.
         const general =
             await fetchJSON<RawNewsArticle[]>(generalUrl, 300);
 
@@ -421,7 +426,10 @@ export async function getNews(
  * - Chuyển dữ liệu thành StockWithWatchlistStatus[].
  *
  * cache() của React:
- * Ghi nhớ kết quả theo tham số trong phạm vi request/render.
+ * Có thể ghi nhớ kết quả theo tham số trong một lần render Server Component.
+ * Không bảo đảm memoization khi gọi ngoài cây component, chẳng hạn
+ * khi Client Component gọi Server Function này sau khi nhập tìm kiếm.
+ * Cache này khác với thời hạn next.revalidate của từng fetch() bên dưới.
  *
  * @param query - Từ khóa tìm kiếm, không bắt buộc.
  * @returns Promise<StockWithWatchlistStatus[]>
@@ -496,7 +504,7 @@ export const searchStocks = cache(
 
                             // Gọi API lấy profile.
                             //
-                            // 3600 giây = 1 giờ.
+                            // 3600 giây = thời hạn cache của fetch() là 1 giờ.
                             //
                             // any: Bỏ qua kiểm tra kiểu chi tiết.
                             // Nên thay bằng interface cụ thể.
@@ -621,7 +629,7 @@ export const searchStocks = cache(
                 //
                 // FinnhubSearchResponse là kiểu response mong đợi.
                 //
-                // 1800 giây = 30 phút.
+                // 1800 giây = thời hạn cache của fetch() là 30 phút.
                 const data =
                     await fetchJSON<FinnhubSearchResponse>(url, 1800);
 
@@ -651,9 +659,9 @@ export const searchStocks = cache(
 
                     // Lấy displaySymbol.
                     //
-                    // LƯU Ý:
-                    // displaySymbol thường là mã hiển thị,
-                    // không nhất thiết là tên sàn giao dịch.
+                    // displaySymbol là mã hiển thị, không phải trường
+                    // xác định sàn giao dịch. Ở nhánh không có query,
+                    // code phía trên còn gán displaySymbol = symbol.
                     const exchangeFromDisplay =
                         (r.displaySymbol as string | undefined)
                         || undefined;
@@ -671,8 +679,10 @@ export const searchStocks = cache(
                     // 2. __exchange từ profile
                     // 3. Giá trị mặc định "US"
                     //
-                    // CHÚ Ý: Logic này có thể không chính xác
-                    // vì displaySymbol không phải tên sàn.
+                    // CHÚ Ý: Đây chỉ là thứ tự ưu tiên hiện tại, không
+                    // bảo đảm exchange là tên sàn. Ở nhánh không có query,
+                    // displaySymbol luôn bằng symbol nên __exchange từ
+                    // profile không được dùng nếu symbol không rỗng.
                     const exchange =
                         exchangeFromDisplay ||
                         exchangeFromProfile ||
