@@ -5,7 +5,7 @@ import { Watchlist } from "@/database/models/watchlist.model";
 import { revalidatePath } from 'next/cache';
 import { auth } from '../better-auth/auth';
 import { headers } from 'next/headers';
-import { redirect } from 'next/navigation';
+import { redirect, unstable_rethrow } from 'next/navigation';
 import { getStocksDetails } from "./finnhub.actions";
 
 export async function getWatchlistSymbolsByEmail(email: string): Promise<string[]> { 
@@ -146,6 +146,7 @@ export const getWatchlistWithData = async () => {
 
         return JSON.parse(JSON.stringify(stocksWithData));
     } catch (error) {
+        unstable_rethrow(error);
         console.error('Error loading watchlist:', error);
         return [];
     }

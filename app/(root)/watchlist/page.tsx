@@ -4,6 +4,8 @@ import SearchCommand from "@/components/SearchCommand";
 import { getWatchlistWithData } from '@/lib/actions/watchlist.actions';
 import { WatchlistTable } from '@/components/WatchlistTable';
 
+export const instant = false;
+
 const Watchlist = async () => {
     const watchlist = await getWatchlistWithData();
     const initialStocks = await searchStocks();

@@ -31,7 +31,7 @@ import { POPULAR_STOCK_SYMBOLS } from '@/lib/constants';
 import { cache } from 'react';
 import { auth } from '../better-auth/auth';
 import { headers } from 'next/headers';
-import { redirect } from 'next/navigation';
+import { redirect, unstable_rethrow } from 'next/navigation';
 import { getWatchlistSymbolsByEmail } from './watchlist.actions';
 
 // URL gốc của Finnhub API.
@@ -556,7 +556,8 @@ export const searchStocks = cache(
 
         } catch (err) {
 
-            // Bắt cả lỗi API và ngoại lệ redirect() ở phía trên.
+            // Để Next.js tự xử lý redirect và prerender interruption.
+            unstable_rethrow(err);
             console.error('Error in stock search:', err);
 
             // Nếu có lỗi thì trả mảng rỗng.
@@ -566,17 +567,17 @@ export const searchStocks = cache(
     }
 );
 
-//Fetch stock details by symbol
+//Lấy thông tin chi tiết về cổ phiếu theo mã chứng khoán
 export const getStocksDetails = cache(async (symbol: string) => {
     const cleanSymbol = symbol.trim().toUpperCase();
 
     try {
         const [quote, profile, financials] = await Promise.all([
-            //Price data - no caching for accuracy
+            //Giá - no caching for accuracy
             fetchJSON(`${FINNHUB_BASE_URL}/quote?symbol=${cleanSymbol}&token=${NEXT_PUBLIC_FINNHUB_API_KEY}`),
-            //Company info - cache 1hr (rarely changes)
+            //Thông tin công ty - cache 1hr (rarely changes)
             fetchJSON(`${FINNHUB_BASE_URL}/stock/profile2?symbol=${cleanSymbol}&token=${NEXT_PUBLIC_FINNHUB_API_KEY}`, 3600),
-            //Financial metrics (P/E, etc.) - cache 30min
+            //Chỉ số tài chính (P/E, etc.) - cache 30min
             fetchJSON(`${FINNHUB_BASE_URL}/stock/metric?symbol=${cleanSymbol}&metric=all&token=${NEXT_PUBLIC_FINNHUB_API_KEY}`, 1800)
         ])
 
@@ -585,7 +586,7 @@ export const getStocksDetails = cache(async (symbol: string) => {
         const profileData = profile as ProfileData;
         const financialsData = financials as FinancialsData;
 
-        // Check if we got valid quote and profile data
+        // Kiểm tra xem chúng ta đã nhận được quoteData và profileData hợp lệ hay chưa
         if (!quoteData?.c || !profileData?.name) throw new Error('Invalid stock data');
 
         const changePercent = quoteData.dp || 0;
