@@ -4,6 +4,7 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { Suspense } from "react";
 import { Skeleton } from '@/components/ui/skeleton'
+
 export const instant = false;
 const Layout = async ({ children }: { children: React.ReactNode }) => {
     const session = await auth.api.getSession({

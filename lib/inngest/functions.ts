@@ -2,7 +2,7 @@ import { inngest } from "@/lib/inngest/client";
 import { PERSONALIZED_WELCOME_EMAIL_PROMPT, NEWS_SUMMARY_EMAIL_PROMPT } from "@/lib/inngest/prompts";
 import { sendNewsSummaryEmail, sendWelcomeEmail, } from "../nodemailer";
 import { getAllUsersForNewsEmail, } from "../actions/user.actions";
-import { getWatchlistSymbolsByEmail } from "../actions/watchlist.action";
+import { getWatchlistSymbolsByEmail } from "../actions/watchlist.actions";
 import { getNews } from "../actions/finnhub.actions";
 import { getFormattedTodayDate } from "@/lib/utils";
 
@@ -23,7 +23,7 @@ export const sendSignupEmail = inngest.createFunction(
         const prompt = PERSONALIZED_WELCOME_EMAIL_PROMPT.replace('{userProfile}', userProfile);
 
         const response = await step.ai.infer('generate-welcome-intro', {
-            model: step.ai.models.gemini({ model: 'gemini-3.5-flash-lite' }), 
+            model: step.ai.models.gemini({ model: 'gemini-3.5-flash-lite' }),
             body: {
                 contents: [
                     {
@@ -75,12 +75,12 @@ export const sendDailyNewsSummary = inngest.createFunction(
                     let articles = await getNews(symbols);
                     //Enforce max 6 articles
                     articles = (articles || []).slice(0, 6);
-                    if (!articles || articles.length === 0) { 
+                    if (!articles || articles.length === 0) {
                         articles = await getNews(); // Fetch general market news if no personalized news
                         articles = (articles || []).slice(0, 6);
                     }
                     perUser.push({ user, articles });
-                }catch (error) {
+                } catch (error) {
                     console.error(`Error fetching news for user ${user.email}:`, error);
                     perUser.push({ user, articles: [] }); // Push empty articles on error
                 }
@@ -89,14 +89,14 @@ export const sendDailyNewsSummary = inngest.createFunction(
         })
         //step 3: Summarize news via AI for each user
         const userNewsSummaries: { user: User; newsContent: string | null }[] = [];
-        for (const { user, articles } of results) { 
-            try { 
+        for (const { user, articles } of results) {
+            try {
                 const prompt = NEWS_SUMMARY_EMAIL_PROMPT.replace('{{newsData}}', JSON.stringify(articles, null, 2));
 
                 const response = await step.ai.infer(`summarize-news-${user.id}`, {
                     model: step.ai.models.gemini({ model: 'gemini-3.5-flash-lite' }),
                     body: {
-                        contents: [{role: 'user', parts: [{ text: prompt }]}]
+                        contents: [{ role: 'user', parts: [{ text: prompt }] }]
                     }
                 })
                 const part = response.candidates?.[0].content?.parts?.[0];
@@ -110,11 +110,11 @@ export const sendDailyNewsSummary = inngest.createFunction(
             }
         }
         //step 4: Send emails
-        await step.run('send-news-emails', async () => { 
+        await step.run('send-news-emails', async () => {
             await Promise.all(
-                userNewsSummaries.map(async ({ user, newsContent }) => { 
+                userNewsSummaries.map(async ({ user, newsContent }) => {
                     if (!newsContent) return false;
-                    
+
                     return await sendNewsSummaryEmail({
                         email: user.email,
                         date: getFormattedTodayDate(),
@@ -131,4 +131,4 @@ export const sendDailyNewsSummary = inngest.createFunction(
     }
 
 )
-    
+

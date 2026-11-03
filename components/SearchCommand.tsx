@@ -3,10 +3,11 @@
 import { useState, useEffect } from "react";
 import { Command, CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
 import { Button } from "@/components/ui/button";
-import { Loader2, TrendingUp } from "lucide-react";
+import { Loader2, TrendingUp, Watch } from "lucide-react";
 import Link from "next/link";
 import { searchStocks } from "@/lib/actions/finnhub.actions";
 import { useDebounce } from "@/hook/useDebounce";
+import WatchlistButton from "./WatchlistButton";
 
 export default function SearchCommand({ renderAs = 'button', label = 'Add stock', initialStocks }: SearchCommandProps) { 
     const [open, setOpen] = useState(false);
@@ -60,6 +61,17 @@ export default function SearchCommand({ renderAs = 'button', label = 'Add stock'
         setSearchTerm('');
         setStocks(initialStocks); // Reset to initial stocks after selection
     }
+
+    // Handle watchlist changes status change
+    const handleWatchlistChange = async (symbol: string, isAdded: boolean) => {
+        //Update current stocks
+        setStocks(
+            initialStocks?.map((stock) => 
+                stock.symbol === symbol ? { ...stock, isInWatchlist: isAdded } : stock ) || []
+        )
+    }
+
+
     return (
         <>
             {renderAs === 'text' ? (
@@ -71,15 +83,26 @@ export default function SearchCommand({ renderAs = 'button', label = 'Add stock'
                         {label}
                     </Button>
             )}
-            <CommandDialog open={open} onOpenChange={setOpen} className="search-dialog">
+            <CommandDialog
+                open={open}
+                onOpenChange={setOpen}
+                className="search-dialog"
+            >
                 <Command>
                     <div className="search-field">
-                        <CommandInput value={searchTerm} onValueChange={setSearchTerm} placeholder="Search stocks..." />
+                        <CommandInput
+                            value={searchTerm}
+                            onValueChange={setSearchTerm}
+                            placeholder="Search stocks..."
+                            // className="search-input"    
+                        />
                         {loading && <Loader2 className="search-loader" />}
                     </div>
                     <CommandList className="search-list">
                         {loading ? (
-                            <CommandEmpty className="search-list-empty">Loading stocks...</CommandEmpty>
+                            <CommandEmpty className="search-list-empty">
+                                Loading stocks...
+                            </CommandEmpty>
                         ) : displayStocks?.length === 0 ? (
                             <div className="search-list-indicator">
                                 {isSearchMode ? 'No results found' : 'No stocks available'}
@@ -106,6 +129,13 @@ export default function SearchCommand({ renderAs = 'button', label = 'Add stock'
                                                             {stock.symbol} | {stock.exchange} | {stock.type}
                                                         </div>
                                                     </div>
+                                                    <WatchlistButton
+                                                        symbol={stock.symbol}
+                                                        company={stock.name}
+                                                        isInWatchlist={stock.isInWatchlist}
+                                                        onWatchlistChange={handleWatchlistChange}
+                                                        type="icon"
+                                                    />
                                                 </Link>
                                             </li>
                                         ))}
@@ -113,7 +143,6 @@ export default function SearchCommand({ renderAs = 'button', label = 'Add stock'
                         )}
                     </CommandList>
                 </Command>
-                
             </CommandDialog>
         </>
     )
