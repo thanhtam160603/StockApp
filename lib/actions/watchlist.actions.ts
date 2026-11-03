@@ -16,13 +16,14 @@ export async function getWatchlistSymbolsByEmail(email: string): Promise<string[
         const db = mongoose.connection.db;
         if (!db) throw new Error("Database connection is not established.");
 
-        //Better Auth stores user in the "users" collection
-        const user = await db.collection('user').findOne<{ _id?: unknown; id?: string; email?: string }>({ email });
+        // Better Auth lưu người dùng trong collection "user" với khóa MongoDB _id.
+        const user = await db.collection('user').findOne({ email });
         
         if (!user) return [];
         
-        const userId = (user.id as string) || String(user.id || '');
-        if (!userId) return [];
+        // Adapter của Better Auth chuyển _id thành session.user.id dạng chuỗi.
+        // Dùng cùng giá trị với addToWatchlist/removeFromWatchlist.
+        const userId = user._id.toString();
 
         const items = await Watchlist.find({ userId }, { symbol: 1 }).lean();
         return items.map((i) => String(i.symbol));
@@ -122,6 +123,8 @@ export const getWatchlistWithData = async () => {
         const stocksWithData = await Promise.all(
             watchlist.map(async (item) => {
                 const stockData = await getStocksDetails(item.symbol);
+
+                if (stockData === null) return item;
 
                 if (!stockData) {
                     console.warn(`Failed to fetch data for ${item.symbol}`);

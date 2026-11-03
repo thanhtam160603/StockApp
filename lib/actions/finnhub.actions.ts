@@ -49,6 +49,12 @@ const FINNHUB_BASE_URL = 'https://finnhub.io/api/v1';
 const NEXT_PUBLIC_FINNHUB_API_KEY =
     process.env.NEXT_PUBLIC_FINNHUB_API_KEY ?? '';
 
+class FinnhubHttpError extends Error {
+    constructor(readonly status: number, body: string) {
+        super(`Fetch failed ${status}: ${body}`);
+    }
+}
+
 /**
  * Hàm fetchJSON<T>
  *
@@ -112,7 +118,7 @@ async function fetchJSON<T>(
 
         // Ném lỗi kèm HTTP status và nội dung response.
         // Ví dụ: Fetch failed 429: API limit reached.
-        throw new Error(`Fetch failed ${res.status}: ${text}`);
+        throw new FinnhubHttpError(res.status, text);
     }
 
     // Chuyển response JSON thành JavaScript object.
@@ -596,6 +602,9 @@ export const getStocksDetails = cache(async (symbol: string) => {
             marketCapFormatted: formatMarketCapValue(profileData?.marketCapitalization || 0)
         }
     } catch (error) { 
+        // Gói Finnhub hiện tại không có quyền với một số mã như APP.NE.
+        if (error instanceof FinnhubHttpError && error.status === 403) return null;
+
         console.error(`Error fetching stock details for ${cleanSymbol}:`, error);
     }
 })
