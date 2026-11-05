@@ -18,18 +18,7 @@ import type { FinnhubRawData } from '@/database/models/watchlist.model';
 
 const FINNHUB_BASE_URL = 'https://finnhub.io/api/v1';
 
-const POPULAR_STOCK_NAMES: Record<string, string> = {
-    AAPL: 'Apple Inc.',
-    MSFT: 'Microsoft',
-    GOOGL: 'Alphabet',
-    AMZN: 'Amazon',
-    TSLA: 'Tesla',
-    META: 'Meta Platforms',
-    NVDA: 'NVIDIA',
-    NFLX: 'Netflix',
-    ORCL: 'Oracle',
-    CRM: 'Salesforce',
-};
+
 
 const POPULAR_STOCK_NAMES: Record<string, string> = {
     AAPL: 'Apple Inc.',
