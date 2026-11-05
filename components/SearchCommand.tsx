@@ -1,9 +1,9 @@
 'use client';
 
 import { useState, useEffect } from "react";
-import { Command, CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
+import { Command, CommandDialog, CommandEmpty, CommandInput, CommandList } from "@/components/ui/command"
 import { Button } from "@/components/ui/button";
-import { Loader2, TrendingUp, Watch } from "lucide-react";
+import { Loader2, TrendingUp } from "lucide-react";
 import Link from "next/link";
 import { searchStocks } from "@/lib/actions/finnhub.actions";
 import { useDebounce } from "@/hook/useDebounce";
@@ -14,9 +14,24 @@ export default function SearchCommand({ renderAs = 'button', label = 'Add stock'
     const [searchTerm, setSearchTerm] = useState('');
     const [loading, setLoading] = useState(false);
     const [stocks, setStocks] = useState<StockWithWatchlistStatus[]>(initialStocks);
+    const [watchlistOverrides, setWatchlistOverrides] = useState<Record<string, boolean>>({});
 
     const isSearchMode = !!searchTerm.trim();
-    const displayStocks = isSearchMode ? stocks : stocks.slice(0, 10); // Show only the first 10 stocks when not searching
+    const displayStocks = (isSearchMode ? stocks : initialStocks)
+        .map((stock) => ({
+            ...stock,
+            isInWatchlist: watchlistOverrides[stock.symbol] ?? stock.isInWatchlist,
+        }))
+        .slice(0, isSearchMode ? 15 : 10);
+
+    useEffect(() => {
+        const onWatchlistChanged = (event: Event) => {
+            const { symbol, isAdded } = (event as CustomEvent<{ symbol: string; isAdded: boolean }>).detail;
+            setWatchlistOverrides((current) => ({ ...current, [symbol]: isAdded }));
+        };
+        window.addEventListener('watchlist:changed', onWatchlistChanged);
+        return () => window.removeEventListener('watchlist:changed', onWatchlistChanged);
+    }, []);
 
     useEffect(() => {
         const onKeyDown = (e: KeyboardEvent) => { 
@@ -32,14 +47,14 @@ export default function SearchCommand({ renderAs = 'button', label = 'Add stock'
     }, []);
 
     const handleSearch = async () => {
-        if (!isSearchMode) return setStocks(initialStocks); // Reset to initial stocks if search term is empty
+        if (!isSearchMode) return;
         
         setLoading(true);
 
         try {
             const results = await searchStocks(searchTerm.trim());
             setStocks(results);
-        } catch (e) {
+        } catch {
             setStocks([]);
         }
         finally {
@@ -56,20 +71,10 @@ export default function SearchCommand({ renderAs = 'button', label = 'Add stock'
 
 
 
-    const handleSelectStock = (value: string) => {
+    const handleSelectStock = () => {
         setOpen(false);
         setSearchTerm('');
         setStocks(initialStocks); // Reset to initial stocks after selection
-    }
-
-    // Handle watchlist changes status change
-    const handleWatchlistChange = (symbol: string, isAdded: boolean) => {
-        // Chỉ cập nhật trạng thái trong danh sách đang hiển thị.
-        setStocks((currentStocks) =>
-            currentStocks.map((stock) =>
-                stock.symbol === symbol ? { ...stock, isInWatchlist: isAdded } : stock
-            )
-        );
     }
 
 
@@ -114,12 +119,12 @@ export default function SearchCommand({ renderAs = 'button', label = 'Add stock'
                                             {isSearchMode ? 'Search results' : 'Popular stocks'}
                                             {` `}({displayStocks.length || 0})
                                         </div>
-                                        {displayStocks.map((stock, i) => (
-                                            <li key={stock.symbol} className="search-item">
+                                        {displayStocks.map((stock) => (
+                                            <li key={stock.symbol} className="search-item flex items-center">
                                                 <Link
                                                     href={`/stocks/${stock.symbol}`}
-                                                    onClick={() => handleSelectStock(stock.symbol)}
-                                                    className="search-item-link"
+                                                    onClick={handleSelectStock}
+                                                    className="search-item-link flex-1"
                                                 >
                                                     <TrendingUp className="h-4 w-4 text-gray-500" />
                                                     <div className="flex-1">
@@ -130,14 +135,15 @@ export default function SearchCommand({ renderAs = 'button', label = 'Add stock'
                                                             {stock.symbol} | {stock.exchange} | {stock.type}
                                                         </div>
                                                     </div>
-                                                    <WatchlistButton
-                                                        symbol={stock.symbol}
-                                                        company={stock.name}
-                                                        isInWatchlist={stock.isInWatchlist}
-                                                        onWatchlistChange={handleWatchlistChange}
-                                                        type="icon"
-                                                    />
                                                 </Link>
+                                                <WatchlistButton
+                                                    symbol={stock.symbol}
+                                                    company={stock.name}
+                                                    exchange={stock.exchange}
+                                                    stockType={stock.type}
+                                                    isInWatchlist={stock.isInWatchlist}
+                                                    type="icon"
+                                                />
                                             </li>
                                         ))}
                                     </ul>

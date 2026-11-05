@@ -31,12 +31,26 @@ import { POPULAR_STOCK_SYMBOLS } from '@/lib/constants';
 import { cache } from 'react';
 import { auth } from '../better-auth/auth';
 import { headers } from 'next/headers';
-import { redirect } from 'next/navigation';
+import { redirect, unstable_rethrow } from 'next/navigation';
 import { getWatchlistSymbolsByEmail } from './watchlist.actions';
+import type { FinnhubRawData } from '@/database/models/watchlist.model';
 
 // URL gốc của Finnhub API.
 // Các endpoint sẽ được nối vào phía sau URL này.
 const FINNHUB_BASE_URL = 'https://finnhub.io/api/v1';
+
+const POPULAR_STOCK_NAMES: Record<string, string> = {
+    AAPL: 'Apple Inc.',
+    MSFT: 'Microsoft',
+    GOOGL: 'Alphabet',
+    AMZN: 'Amazon',
+    TSLA: 'Tesla',
+    META: 'Meta Platforms',
+    NVDA: 'NVIDIA',
+    NFLX: 'Netflix',
+    ORCL: 'Oracle',
+    CRM: 'Salesforce',
+};
 
 // Lấy API key từ biến môi trường.
 // process.env: Truy cập các biến môi trường của Node.js.
@@ -435,7 +449,7 @@ export async function getNews(
  *
  * Chức năng:
  * - Có query: Tìm kiếm cổ phiếu bằng Finnhub Search API.
- * - Không có query: Lấy profile của 10 mã phổ biến.
+ * - Không có query: Hiển thị 10 mã phổ biến từ danh sách có sẵn.
  * - Chuyển dữ liệu thành StockWithWatchlistStatus[].
  *
  * cache() của React:
@@ -468,14 +482,6 @@ export const searchStocks = cache(
             // Ưu tiên key chỉ dùng trên server; dùng key NEXT_PUBLIC_ nếu không có.
             const token = process.env.FINNHUB_API_KEY ?? NEXT_PUBLIC_FINNHUB_API_KEY;
 
-            if (!token) {
-                // Thiếu key: ghi log phía server và trả danh sách rỗng.
-                console.error('Error in stock search:',
-                    new Error('FINNHUB API key is not configured')
-                );
-                return [];
-            }
-
             // Bỏ khoảng trắng; query rỗng hoặc không phải chuỗi đi vào nhánh phổ biến.
             const trimmed = typeof query === 'string' ? query.trim() : '';
 
@@ -483,42 +489,17 @@ export const searchStocks = cache(
             let results: FinnhubSearchResult[] = [];
 
             if (!trimmed) {
-                // Lấy profile của 10 mã đầu trong danh sách phổ biến, chạy đồng thời.
-                const top = POPULAR_STOCK_SYMBOLS.slice(0, 10);
-                const profiles = await Promise.all(
-                    top.map(async (sym) => {
-                        try {
-                            const url = `${FINNHUB_BASE_URL}/stock/profile2?symbol=${encodeURIComponent(sym)}&token=${token}`;
-                            // Cache response của request này tối đa 3600 giây theo fetchJSON.
-                            const profile = await fetchJSON<any>(url, 3600);
-
-                            return { sym, profile } as { sym: string; profile: any };
-                        } catch (e) {
-                            // Một mã lỗi vẫn cho phép các mã khác tiếp tục hiển thị.
-                            console.error('Error fetching profile for', sym, e);
-                            return { sym, profile: null } as { sym: string; profile: any };
-                        }
-                    })
-                )
-                // Chuẩn hóa profile thành cấu trúc giống kết quả của Search API.
-                results = profiles
-                    .map(({ sym, profile }) => {
-                        const symbol = sym.toUpperCase();
-                        const name: string | undefined = profile?.name || profile?.ticker || undefined;
-                        const exchange: string | undefined = profile?.exchange || undefined;
-                        if (!name) return undefined;
-                        const r: FinnhubSearchResult = {
-                            symbol,
-                            description: name,
-                            displaySymbol: symbol,
-                            type: 'Common Stock',
-                        };
-                        // Thuộc tính tạm ngoài kiểu khai báo; chỉ nhánh profile có nó.
-                        (r as any).__exchange = exchange;
-                        return r;
-                    })
-                    .filter((x): x is FinnhubSearchResult => Boolean(x));
+                // Danh sách này không gọi Finnhub, nên vẫn hiện khi API bị giới hạn 429.
+                results = POPULAR_STOCK_SYMBOLS.slice(0, 10).map((symbol) => ({
+                    symbol,
+                    description: POPULAR_STOCK_NAMES[symbol] || symbol,
+                    type: 'Common Stock',
+                }));
             } else {
+                if (!token) {
+                    console.error('Error in stock search:', new Error('FINNHUB API key is not configured'));
+                    return [];
+                }
                 // Có từ khóa: gọi Search API; cache response trong 1800 giây.
                 const url = `${FINNHUB_BASE_URL}/search?q=${encodeURIComponent(trimmed)}&token=${token}`;
                 const data = await fetchJSON<FinnhubSearchResponse>(url, 1800);
@@ -531,15 +512,8 @@ export const searchStocks = cache(
                 .map((r) => {
                     const upper = (r.symbol || '').toUpperCase();
                     const name = r.description || upper;
-                    // displaySymbol là mã hiển thị, không chắc là tên sàn.
-                    const exchangeFromDisplay =
-                        (r.displaySymbol as string | undefined) || undefined;
-                    const exchangeFromProfile = (r as any).__exchange as
-                        | string
-                        | undefined;
-                    // Thứ tự hiện tại khiến __exchange bị bỏ qua nếu có displaySymbol;
-                    // ở nhánh phổ biến, displaySymbol luôn bằng symbol.
-                    const exchange = exchangeFromDisplay || exchangeFromProfile || 'US';
+                    // Search API không cung cấp tên sàn; displaySymbol là mã hiển thị.
+                    const exchange = 'US';
                     const type = r.type || 'Stock';
                     const item: StockWithWatchlistStatus = {
                         symbol: upper,
@@ -556,7 +530,8 @@ export const searchStocks = cache(
 
         } catch (err) {
 
-            // Bắt cả lỗi API và ngoại lệ redirect() ở phía trên.
+            // Trả tín hiệu redirect/prerender về Next.js trước khi xử lý lỗi API.
+            unstable_rethrow(err);
             console.error('Error in stock search:', err);
 
             // Nếu có lỗi thì trả mảng rỗng.
@@ -566,42 +541,77 @@ export const searchStocks = cache(
     }
 );
 
-//Fetch stock details by symbol
-export const getStocksDetails = cache(async (symbol: string) => {
+// Lấy dữ liệu Finnhub; cachedRaw là response nguyên vẹn đã lưu trong watchlist.
+export const getStocksDetails = cache(async (
+    symbol: string,
+    fallbackCompany?: string,
+    cachedRaw?: FinnhubRawData,
+) => {
     const cleanSymbol = symbol.trim().toUpperCase();
+    const token = process.env.FINNHUB_API_KEY ?? NEXT_PUBLIC_FINNHUB_API_KEY;
 
-    try {
-        const [quote, profile, financials] = await Promise.all([
-            //Price data - no caching for accuracy
-            fetchJSON(`${FINNHUB_BASE_URL}/quote?symbol=${cleanSymbol}&token=${NEXT_PUBLIC_FINNHUB_API_KEY}`),
-            //Company info - cache 1hr (rarely changes)
-            fetchJSON(`${FINNHUB_BASE_URL}/stock/profile2?symbol=${cleanSymbol}&token=${NEXT_PUBLIC_FINNHUB_API_KEY}`, 3600),
-            //Financial metrics (P/E, etc.) - cache 30min
-            fetchJSON(`${FINNHUB_BASE_URL}/stock/metric?symbol=${cleanSymbol}&metric=all&token=${NEXT_PUBLIC_FINNHUB_API_KEY}`, 1800)
-        ])
-
-        // Type cast the responses
-        const quoteData = quote as QuoteData;
-        const profileData = profile as ProfileData;
-        const financialsData = financials as FinancialsData;
-
-        // Check if we got valid quote and profile data
-        if (!quoteData?.c || !profileData?.name) throw new Error('Invalid stock data');
-
-        const changePercent = quoteData.dp || 0;
-        const peRatio = financialsData.metric?.peNormalizedAnnual || null;
-
+    // Cùng một cách định dạng cho response mới và response đọc từ MongoDB.
+    // Hàm giữ raw nguyên vẹn trong finnhubRaw để nơi gọi có thể lưu đủ các trường.
+    const formatDetails = (raw: FinnhubRawData, dataSource: 'live' | 'cached') => {
+        const price = raw.quote.c;
+        if (typeof price !== 'number' || price <= 0) throw new Error('Invalid stock data');
+        const changePercent = raw.quote.dp || 0;
+        const peRatio = raw.financials?.metric?.peNormalizedAnnual || null;
         return {
             symbol: cleanSymbol,
-            company: profileData?.name,
-            currentPrice: quoteData.c,
+            company: raw.profile?.name || fallbackCompany || cleanSymbol,
+            currentPrice: price,
             changePercent,
-            priceFormatted: formatPrice(quoteData.c),
-            changeFormatted: formatChangePercent(changePercent),
+            priceFormatted: formatPrice(price),
+            changeFormatted: formatChangePercent(changePercent) || '0.00%',
             peRatio: peRatio?.toFixed(1) || '-',
-            marketCapFormatted: formatMarketCapValue(profileData?.marketCapitalization || 0)
+            marketCapFormatted: raw.profile?.marketCapitalization
+                // Finnhub trả vốn hóa theo triệu USD; hàm định dạng nhận USD.
+                ? formatMarketCapValue(raw.profile.marketCapitalization * 1_000_000)
+                : '-',
+            finnhubRaw: raw,
+            dataSource,
+        };
+    };
+
+    try {
+        if (!token) throw new Error('FINNHUB API key is not configured');
+        // Lấy giá trước; nếu quote bị giới hạn thì không gọi thêm profile/metric.
+        const quoteData = await fetchJSON<FinnhubRawData['quote']>(
+            `${FINNHUB_BASE_URL}/quote?symbol=${encodeURIComponent(cleanSymbol)}&token=${token}`,
+        );
+        if (!quoteData?.c) throw new Error('Invalid stock data');
+
+        // allSettled giữ kết quả từng endpoint, kể cả khi endpoint còn lại thất bại.
+        // Không truyền revalidateSeconds: fetchJSON dùng no-store để hỏi Finnhub trước.
+        const [profileResult, financialsResult] = await Promise.allSettled([
+            // Luôn hỏi Finnhub trước; MongoDB chỉ được dùng khi endpoint lỗi.
+            fetchJSON<NonNullable<FinnhubRawData['profile']>>(`${FINNHUB_BASE_URL}/stock/profile2?symbol=${encodeURIComponent(cleanSymbol)}&token=${token}`),
+            fetchJSON<NonNullable<FinnhubRawData['financials']>>(`${FINNHUB_BASE_URL}/stock/metric?symbol=${encodeURIComponent(cleanSymbol)}&metric=all&token=${token}`)
+        ])
+
+        for (const result of [profileResult, financialsResult]) {
+            // allSettled cũng có thể giữ tín hiệu prerender trong nhánh rejected.
+            if (result.status === 'rejected') unstable_rethrow(result.reason);
+            if (result.status === 'rejected' &&
+                !(result.reason instanceof FinnhubHttpError && result.reason.status === 403)) {
+                console.error(`Partial stock data for ${cleanSymbol}:`, result.reason);
+            }
         }
+
+        // Lưu cả response; endpoint phụ lỗi thì giữ response thành công trước đó.
+        const raw: FinnhubRawData = {
+            quote: quoteData,
+            // fulfilled: lấy toàn bộ JSON mới; rejected: dùng JSON đã lưu của endpoint đó.
+            profile: profileResult.status === 'fulfilled' ? profileResult.value : cachedRaw?.profile,
+            financials: financialsResult.status === 'fulfilled' ? financialsResult.value : cachedRaw?.financials,
+        };
+        return formatDetails(raw, 'live');
     } catch (error) { 
+        // Chỉ dùng MongoDB cho lỗi dữ liệu/API; tín hiệu Next.js phải được ném lại.
+        unstable_rethrow(error);
+        // Quote lỗi 429/403: đọc dữ liệu đã lưu, không gọi thêm Finnhub.
+        if (cachedRaw?.quote?.c) return formatDetails(cachedRaw, 'cached');
         // Gói Finnhub hiện tại không có quyền với một số mã như APP.NE.
         if (error instanceof FinnhubHttpError && error.status === 403) return null;
 
