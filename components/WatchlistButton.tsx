@@ -1,44 +1,63 @@
 "use client";
-import { useMemo, useState } from "react";
-import { useDebounce } from "@/hook/useDebounce";
-import { Star, StarIcon, Stars, Trash2 } from 'lucide-react';
+import { useEffect, useState } from "react";
+import { useRouter } from 'next/navigation';
+import { Star, Trash2 } from 'lucide-react';
 import { toast } from "sonner";
 import { addToWatchlist, removeFromWatchlist } from "@/lib/actions/watchlist.actions";
 
 const WatchlistButton = ({
     symbol,
     company,
+    exchange,
+    stockType,
     isInWatchlist,
     showTrashIcon = false,
     type = "button",
-    onWatchlistChange,
 }: WatchlistButtonProps) => {
-    const [added, setAdded] = useState<boolean>(!!isInWatchlist);
+    const [addedOverride, setAddedOverride] = useState<boolean | null>(null);
+    const added = addedOverride ?? isInWatchlist;
+    const [pending, setPending] = useState(false);
+    const router = useRouter();
 
-    const label = useMemo(() => {
-        if (type === "icon") return added ? "" : "";
-        return added ? "Remove from Watchlist" : "Add to Watchlist";
-    }, [added, type]);
+    useEffect(() => {
+        const onWatchlistChanged = (event: Event) => {
+            const detail = (event as CustomEvent<{ symbol: string; isAdded: boolean }>).detail;
+            if (detail.symbol === symbol) setAddedOverride(detail.isAdded);
+        };
+        window.addEventListener('watchlist:changed', onWatchlistChanged);
+        return () => window.removeEventListener('watchlist:changed', onWatchlistChanged);
+    }, [symbol]);
+
+    const label = added ? "Remove from Watchlist" : "Add to Watchlist";
 
     // Handle adding/removing stocks from watchlist
     const toggleWatchlist = async () => {
-        const result = added
-            ? await removeFromWatchlist(symbol)
-            : await addToWatchlist(symbol, company);
+        setPending(true);
+        const wasAdded = added;
 
-        if (result?.success) {
-            toast.success(added ? "Removed from watchlist" : "Added to watchlist", {
-                description: `${company} ${added ? "removed from" : "added to"
-                    } your watchlist.`,
-            });
+        try {
+            const result = wasAdded
+                ? await removeFromWatchlist(symbol)
+                : await addToWatchlist(symbol, company, exchange, stockType);
 
-            // Notify parent component of watchlist change for state synchronization
-            onWatchlistChange?.(symbol, !added);
+            if (!result?.success) {
+                toast.error(result && 'error' in result ? result.error : 'Could not update watchlist');
+                return;
+            }
+
+            const isAdded = !wasAdded;
+            setAddedOverride(isAdded);
+            window.dispatchEvent(new CustomEvent('watchlist:changed', {
+                detail: { symbol, isAdded },
+            }));
+            router.refresh();
+            toast.success(wasAdded ? 'Removed from watchlist' : 'Added to watchlist');
+        } catch {
+            toast.error('Could not update watchlist');
+        } finally {
+            setPending(false);
         }
-    }
-
-    // Debounce the toggle function to prevent rapid API calls (300ms delay)
-    const debouncedToggle = useDebounce(toggleWatchlist, 300);
+    };
 
     // Click handler that provides optimistic UI updates
     const handleClick = (e: React.MouseEvent) => {
@@ -46,8 +65,7 @@ const WatchlistButton = ({
         e.stopPropagation();
         e.preventDefault();
 
-        setAdded(!added);
-        debouncedToggle();
+        void toggleWatchlist();
     };
 
     if (type === "icon") {
@@ -64,6 +82,7 @@ const WatchlistButton = ({
                 }
                 className={`watchlist-icon-btn ${added ? 'watchlist-icon-added' : ''}`}
                 onClick={handleClick}
+                disabled={pending}
             >
                 <Star fill={added ? 'currentColor' : 'none'} />
 
@@ -75,6 +94,7 @@ const WatchlistButton = ({
         <button
             className={`watchlist-btn ${added ? "watchlist-remove" : ""}`}
             onClick={handleClick}
+            disabled={pending}
         >
             {showTrashIcon && added ? <Trash2 /> : null}
             <span>{label}</span>

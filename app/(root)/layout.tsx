@@ -5,8 +5,8 @@ import { redirect } from "next/navigation";
 import { Suspense } from "react";
 import { Skeleton } from '@/components/ui/skeleton'
 
-export const instant = false;
-const Layout = async ({ children }: { children: React.ReactNode }) => {
+// Suspense phải nằm bên ngoài component đọc headers/session.
+const AuthenticatedLayout = async ({ children }: { children: React.ReactNode }) => {
     const session = await auth.api.getSession({
         headers: await headers()
     });
@@ -18,13 +18,17 @@ const Layout = async ({ children }: { children: React.ReactNode }) => {
         name: session.user.name,
     }
     return (
-        <Suspense fallback={<Skeleton />}>
-            <main className="min-h-screen text-gray-400">
-                <Header user={user} />
-                {children}
-            </main>
-        </Suspense>
+        <main className="min-h-screen text-gray-400">
+            <Header user={user} />
+            {children}
+        </main>
     )
 }
+
+const Layout = ({ children }: { children: React.ReactNode }) => (
+    <Suspense fallback={<Skeleton className="min-h-screen w-full" />}>
+        <AuthenticatedLayout>{children}</AuthenticatedLayout>
+    </Suspense>
+);
 
 export default Layout;

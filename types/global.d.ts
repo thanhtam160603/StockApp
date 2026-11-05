@@ -105,6 +105,8 @@ declare global {
     type WatchlistButtonProps = {
         symbol: string;
         company: string;
+        exchange?: string;
+        stockType?: string;
         isInWatchlist: boolean;
         showTrashIcon?: boolean;
         type?: 'button' | 'icon';
@@ -139,6 +141,8 @@ declare global {
         userId: string;
         symbol: string;
         company: string;
+        exchange?: string;
+        stockType?: string;
         addedAt: Date;
         currentPrice?: number;
         changePercent?: number;
@@ -146,6 +150,7 @@ declare global {
         changeFormatted?: string;
         marketCap?: string;
         peRatio?: string;
+        dataSource?: 'live' | 'cached';
     };
 
     type AlertsListProps = {
