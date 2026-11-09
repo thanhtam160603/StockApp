@@ -7,7 +7,7 @@ export const getAllUsersForNewsEmail = async () => {
         const db = mongoose.connection.db;
         if (!db) throw new Error("Database connection is not established.");
 
-        const user = await db.collection("users").find(
+        const user = await db.collection("user").find(
             { email: { $exists: true, $ne: null } },
             { projection: { _id: 1, id: 1, email: 1, name: 1, country: 1 } }
         ).toArray();
